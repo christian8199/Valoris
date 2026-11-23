@@ -1,7 +1,9 @@
 package com.example.widget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
@@ -54,6 +56,11 @@ import androidx.glance.text.TextStyle
 import com.example.MainActivity
 import com.example.R
 import com.example.data.repository.PortfolioRepository
+import com.example.data.repository.WidgetSourceData
+import com.example.domain.model.PortfolioDashboardData
+import com.example.domain.model.RefreshInterval
+import com.example.domain.model.SupportedCurrency
+import com.example.domain.model.ThemeMode
 import com.example.domain.model.WidgetDisplayMetric
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -79,15 +86,23 @@ class ValorisWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val repository = PortfolioRepository.getInstance(context)
-        val initialSource = repository.getWidgetSnapshotData()
+        // Load fast local Room/DataStore snapshot first so provideContent renders immediately
+        // instead of stalling on network history before leaving the initial loading layout.
+        val fastDashboard = runCatching { repository.getDashboardSnapshot() }
+            .getOrElse { emptyWidgetDashboard() }
 
         // Hoist mutable state, sync lock, and rendered chart bitmap outside provideContent so
         // SizeMode.Responsive buckets share one snapshot and one ~220 KB RGB_565 Bitmap instance.
-        val sharedSourceState = mutableStateOf(initialSource)
+        val sharedSourceState = mutableStateOf(
+            WidgetSourceData(
+                dashboard = fastDashboard,
+                movement = null
+            )
+        )
         val syncMutex = Mutex()
-        var isBaselineCaptured = false
-        var syncedDataRevision = 0
-        var syncedUiRevision = 0
+        var isMovementLoaded = false
+        var syncedDataRevision = -1
+        var syncedUiRevision = -1
         var cachedChartKey: WidgetChartRenderKey? = null
         var cachedBitmap: Bitmap? = null
 
@@ -99,24 +114,23 @@ class ValorisWidget : GlanceAppWidget() {
 
             LaunchedEffect(dataRevision, uiRevision) {
                 syncMutex.withLock {
-                    if (!isBaselineCaptured) {
-                        // Initial snapshot was just loaded prior to provideContent; skip duplicate fetch.
-                        isBaselineCaptured = true
+                    val needsFullReload = !isMovementLoaded || dataRevision != syncedDataRevision
+                    if (needsFullReload) {
+                        isMovementLoaded = true
                         syncedDataRevision = dataRevision
                         syncedUiRevision = uiRevision
-                        return@withLock
-                    }
-                    when {
-                        dataRevision != syncedDataRevision -> {
-                            syncedDataRevision = dataRevision
-                            syncedUiRevision = uiRevision
-                            sharedSourceState.value =
-                                repository.getWidgetSnapshotData(forceRefreshHistory = false)
+                        val loaded = runCatching {
+                            repository.getWidgetSnapshotData(forceRefreshHistory = false)
+                        }.getOrNull()
+                        if (loaded != null) {
+                            sharedSourceState.value = loaded
                         }
-                        uiRevision != syncedUiRevision -> {
-                            syncedUiRevision = uiRevision
-                            // Fast local-only refresh (e.g., privacy toggle) with zero chart/network work.
-                            val updatedDashboard = repository.getDashboardSnapshot()
+                    } else if (uiRevision != syncedUiRevision) {
+                        syncedUiRevision = uiRevision
+                        val updatedDashboard = runCatching {
+                            repository.getDashboardSnapshot()
+                        }.getOrNull()
+                        if (updatedDashboard != null) {
                             sharedSourceState.value =
                                 sharedSourceState.value.copy(dashboard = updatedDashboard)
                         }
@@ -135,16 +149,16 @@ class ValorisWidget : GlanceAppWidget() {
                 isNegative = snapshot.isNegative,
                 showZeroLine = snapshot.metricMode == WidgetDisplayMetric.TOTAL_RETURN
             )
-            if (cachedBitmap == null || cachedChartKey != chartKey) {
-                cachedBitmap = ValorisWidgetChartRenderer.renderBackgroundChart(
+            val backgroundBitmap = cachedBitmap?.takeIf { cachedChartKey == chartKey }
+                ?: ValorisWidgetChartRenderer.renderBackgroundChart(
                     points = snapshot.chartPoints,
                     isPositive = snapshot.isPositive,
                     isNegative = snapshot.isNegative,
                     showZeroLine = snapshot.metricMode == WidgetDisplayMetric.TOTAL_RETURN
-                )
-                cachedChartKey = chartKey
-            }
-            val backgroundBitmap = cachedBitmap!!
+                ).also { rendered ->
+                    cachedBitmap = rendered
+                    cachedChartKey = chartKey
+                }
             val size = LocalSize.current
 
             GlanceTheme {
@@ -161,7 +175,14 @@ class ValorisWidget : GlanceAppWidget() {
 
     override suspend fun providePreview(context: Context, widgetCategory: Int) {
         val repository = PortfolioRepository.getInstance(context)
-        val previewSource = repository.getWidgetSnapshotData()
+        val previewSource = runCatching { repository.getWidgetSnapshotData() }
+            .getOrElse {
+                WidgetSourceData(
+                    dashboard = runCatching { repository.getDashboardSnapshot() }
+                        .getOrElse { emptyWidgetDashboard() },
+                    movement = null
+                )
+            }
         val snapshot = buildWidgetSnapshot(
             dashboard = previewSource.dashboard,
             movement = previewSource.movement
@@ -193,7 +214,18 @@ class ValorisWidget : GlanceAppWidget() {
         appWidgetId: Int,
         throwable: Throwable
     ) {
-        val fallback = RemoteViews(context.packageName, R.layout.widget_valoris_loading)
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            appWidgetId,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val fallback = RemoteViews(context.packageName, R.layout.widget_valoris_error).apply {
+            setOnClickPendingIntent(R.id.widget_error_root, pendingIntent)
+        }
         AppWidgetManager.getInstance(context).updateAppWidget(appWidgetId, fallback)
     }
 
@@ -210,6 +242,28 @@ class ValorisWidget : GlanceAppWidget() {
             COMPACT_SIZE,
             MEDIUM_SIZE,
             EXPANDED_SIZE
+        )
+
+        private fun emptyWidgetDashboard(): PortfolioDashboardData = PortfolioDashboardData(
+            displayCurrency = SupportedCurrency.IDR,
+            isBalanceHidden = false,
+            refreshInterval = RefreshInterval.FIVE_MINUTES,
+            themeMode = ThemeMode.SYSTEM,
+            useCompactNumbers = false,
+            showPnlOnCards = true,
+            totalValueDisplay = 0.0,
+            dayChangeDisplay = 0.0,
+            dayChangePercent = 0.0,
+            totalUnrealizedGainDisplay = null,
+            totalUnrealizedGainPercent = null,
+            valuedHoldings = emptyList(),
+            allocationSlices = emptyList(),
+            fxRatesList = emptyList(),
+            usdToDisplayRate = 1.0,
+            trendValuesDisplay = emptyList(),
+            lastSyncEpoch = null,
+            fxSourceLabel = "Cached",
+            hasStaleQuotes = false
         )
     }
 }

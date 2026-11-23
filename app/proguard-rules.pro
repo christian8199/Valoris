@@ -29,9 +29,19 @@
     <init>(...);
 }
 
-# Glance ActionCallback is instantiated reflectively via zero-argument constructor
+# Glance AppWidget & ActionCallback classes retained across R8 minification
+-keep class * extends androidx.glance.appwidget.GlanceAppWidget {
+    public <init>();
+}
+-keep class * extends androidx.glance.appwidget.GlanceAppWidgetReceiver {
+    public <init>();
+}
 -keep class * implements androidx.glance.appwidget.action.ActionCallback {
     public <init>();
+}
+-keep class * implements androidx.glance.state.GlanceStateDefinition { *; }
+-keep class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 
 # OkHttp optional dependencies

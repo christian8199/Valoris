@@ -14,6 +14,8 @@
     <string name="widget_name">Valoris Portfolio</string>
     <string name="widget_description">Minimalist live portfolio chart showing Total Asset Value or Total Return</string>
     <string name="widget_loading">Loading portfolio…</string>
+    <string name="widget_error_title">Tap to open Valoris</string>
+    <string name="widget_error_subtitle">Refresh portfolio data in app</string>
     <string name="cd_widget_refresh">Refresh live widget quotes</string>
     <string name="cd_widget_privacy">Toggle widget balance visibility</string>
 </resources>

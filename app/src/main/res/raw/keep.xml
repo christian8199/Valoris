@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@layout/widget_valoris_*,@drawable/widget_preview_bg,@drawable/ic_widget_*,@dimen/valoris_widget_corner_radius,@xml/valoris_widget_info" />
