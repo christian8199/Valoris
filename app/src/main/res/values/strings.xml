@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Valoris</string>
+    <string name="nav_overview">Overview</string>
+    <string name="nav_holdings">Holdings</string>
+    <string name="nav_movement">Movement</string>
+    <string name="nav_history">History</string>
+    <string name="nav_markets">FX &amp; Rates</string>
+    <string name="nav_settings">Settings</string>
+    <string name="cd_refresh_prices">Refresh live prices</string>
+    <string name="cd_toggle_privacy">Toggle balance visibility</string>
+    <string name="cd_settings">Display preferences and settings</string>
+    <string name="cd_add_holding">Add holding</string>
+    <string name="cd_empty_vault">Editorial wealth illustration</string>
+</resources>

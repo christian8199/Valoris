@@ -1,0 +1,6 @@
+{
+  "name": "Valoris",
+  "description": "Private local-first total asset tracker for live stocks, ETFs, cash, and commodities with automatic multi-currency conversion to IDR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
