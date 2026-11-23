@@ -12,6 +12,7 @@ import com.example.domain.model.ChartTimeframe
 import com.example.domain.model.RefreshInterval
 import com.example.domain.model.SupportedCurrency
 import com.example.domain.model.ThemeMode
+import com.example.domain.model.WidgetDisplayMetric
 import com.example.util.AppLockSecurity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -28,6 +29,8 @@ data class UserPreferences(
     val showPnlOnCards: Boolean = true,
     val showExtendedHoursPrice: Boolean = false,
     val defaultChartTimeframe: ChartTimeframe = ChartTimeframe.MONTH,
+    val widgetDisplayMetric: WidgetDisplayMetric = WidgetDisplayMetric.ASSET_VALUE,
+    val widgetChartTimeframe: ChartTimeframe = ChartTimeframe.MONTH,
     val appLockEnabled: Boolean = false,
     val biometricUnlockEnabled: Boolean = true,
     val appLockPinHash: String = "",
@@ -52,6 +55,8 @@ class UserPreferencesRepository(context: Context) {
         val SHOW_PNL_ON_CARDS = booleanPreferencesKey("show_pnl_on_cards")
         val SHOW_EXTENDED_HOURS_PRICE = booleanPreferencesKey("show_extended_hours_price")
         val DEFAULT_CHART_TIMEFRAME = stringPreferencesKey("default_chart_timeframe")
+        val WIDGET_DISPLAY_METRIC = stringPreferencesKey("widget_display_metric")
+        val WIDGET_CHART_TIMEFRAME = stringPreferencesKey("widget_chart_timeframe")
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val BIOMETRIC_UNLOCK_ENABLED = booleanPreferencesKey("biometric_unlock_enabled")
         val APP_LOCK_PIN_HASH = stringPreferencesKey("app_lock_pin_hash")
@@ -76,6 +81,8 @@ class UserPreferencesRepository(context: Context) {
             showPnlOnCards = prefs[Keys.SHOW_PNL_ON_CARDS] ?: true,
             showExtendedHoursPrice = prefs[Keys.SHOW_EXTENDED_HOURS_PRICE] ?: false,
             defaultChartTimeframe = ChartTimeframe.fromName(prefs[Keys.DEFAULT_CHART_TIMEFRAME]),
+            widgetDisplayMetric = WidgetDisplayMetric.fromName(prefs[Keys.WIDGET_DISPLAY_METRIC]),
+            widgetChartTimeframe = ChartTimeframe.fromName(prefs[Keys.WIDGET_CHART_TIMEFRAME]),
             appLockEnabled = lockRequested && pinHash.isNotBlank() && pinSalt.isNotBlank(),
             biometricUnlockEnabled = prefs[Keys.BIOMETRIC_UNLOCK_ENABLED] ?: true,
             appLockPinHash = pinHash,
@@ -143,6 +150,18 @@ class UserPreferencesRepository(context: Context) {
     suspend fun setDefaultChartTimeframe(timeframe: ChartTimeframe) {
         appContext.dataStore.edit { prefs ->
             prefs[Keys.DEFAULT_CHART_TIMEFRAME] = timeframe.name
+        }
+    }
+
+    suspend fun setWidgetDisplayMetric(metric: WidgetDisplayMetric) {
+        appContext.dataStore.edit { prefs ->
+            prefs[Keys.WIDGET_DISPLAY_METRIC] = metric.name
+        }
+    }
+
+    suspend fun setWidgetChartTimeframe(timeframe: ChartTimeframe) {
+        appContext.dataStore.edit { prefs ->
+            prefs[Keys.WIDGET_CHART_TIMEFRAME] = timeframe.name
         }
     }
 

@@ -461,6 +461,9 @@ fun ValorisApp(
                                         onConfirmRestoreBackup = viewModel::confirmRestoreBackup,
                                         onDismissRestorePreview = viewModel::dismissRestorePreview,
                                         onSystemPickerStateChanged = { active -> isExternalPickerActive = active },
+                                        onSelectWidgetDisplayMetric = viewModel::setWidgetDisplayMetric,
+                                        onSelectWidgetChartTimeframe = viewModel::setWidgetChartTimeframe,
+                                        onRequestPinWidget = viewModel::requestPinPortfolioWidget,
                                         onBack = goBack
                                     )
                                 }

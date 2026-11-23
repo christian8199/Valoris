@@ -11,4 +11,9 @@
     <string name="cd_settings">Display preferences and settings</string>
     <string name="cd_add_holding">Add holding</string>
     <string name="cd_empty_vault">Editorial wealth illustration</string>
+    <string name="widget_name">Valoris Portfolio</string>
+    <string name="widget_description">Minimalist live portfolio chart showing Total Asset Value or Total Return</string>
+    <string name="widget_loading">Loading portfolio…</string>
+    <string name="cd_widget_refresh">Refresh live widget quotes</string>
+    <string name="cd_widget_privacy">Toggle widget balance visibility</string>
 </resources>

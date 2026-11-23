@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:letterSpacing="0.12"
+        android:text="VALORIS · 1M"
+        android:textColor="#D4B259"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:letterSpacing="0.08"
+        android:text="TOTAL ASSET VALUE · USD"
+        android:textColor="#B7C4BD"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="$124,850.00"
+        android:textColor="#F6F3EB"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="+$5,180.00 (+4.33%) · 1M"
+        android:textColor="#3CCB88"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+</LinearLayout>

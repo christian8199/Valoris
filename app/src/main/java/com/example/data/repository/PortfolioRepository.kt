@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import android.content.Context
 import androidx.room.withTransaction
 import com.example.data.backup.BackupHolding
 import com.example.data.backup.BackupPreferences
@@ -24,6 +25,7 @@ import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.ValorisDatabase
 import com.example.data.remote.FrankfurterFxService
 import com.example.data.remote.MarketApiService
+import com.example.data.remote.NetworkModule
 import com.example.data.remote.OpenErFxService
 import com.example.domain.model.AllocationSlice
 import com.example.domain.model.AssetClass
@@ -48,6 +50,7 @@ import com.example.domain.model.TransactionDisplayItem
 import com.example.domain.model.TransactionType
 import com.example.domain.model.UnitType
 import com.example.domain.model.ValuedHolding
+import com.example.domain.model.WidgetDisplayMetric
 import com.example.util.CuratedAssets
 import com.example.util.CurrencyFormatter
 import kotlinx.coroutines.Dispatchers
@@ -63,11 +66,17 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
+
+data class WidgetSourceData(
+    val dashboard: PortfolioDashboardData,
+    val movement: PortfolioMovementData?
+)
 
 data class RefreshResult(
     val fxUpdated: Boolean,
@@ -402,6 +411,8 @@ class PortfolioRepository(
             showPnlOnCards = prefs.showPnlOnCards,
             showExtendedHoursPrice = prefs.showExtendedHoursPrice,
             defaultChartTimeframe = prefs.defaultChartTimeframe,
+            widgetDisplayMetric = prefs.widgetDisplayMetric,
+            widgetChartTimeframe = prefs.widgetChartTimeframe,
             appLockEnabled = prefs.appLockEnabled,
             biometricUnlockEnabled = prefs.biometricUnlockEnabled,
             totalValueDisplay = totalDisplay,
@@ -1516,6 +1527,14 @@ class PortfolioRepository(
         prefsRepo.setDefaultChartTimeframe(timeframe)
     }
 
+    suspend fun setWidgetDisplayMetric(metric: WidgetDisplayMetric) {
+        prefsRepo.setWidgetDisplayMetric(metric)
+    }
+
+    suspend fun setWidgetChartTimeframe(timeframe: ChartTimeframe) {
+        prefsRepo.setWidgetChartTimeframe(timeframe)
+    }
+
     suspend fun enableAppLock(pin: String, biometricEnabled: Boolean) {
         prefsRepo.enableAppLock(pin, biometricEnabled)
     }
@@ -1690,6 +1709,53 @@ class PortfolioRepository(
         }
     }
 
+    suspend fun getDashboardSnapshot(): PortfolioDashboardData = withContext(Dispatchers.IO) {
+        val holdingEntities = holdingDao.getAllHoldingsOnce()
+        val quoteEntities = quoteDao.getAllQuotesOnce()
+        val fxEntities = fxRateDao.getAllRatesOnce()
+        val snapshots = snapshotDao.getAllSnapshotsOnce()
+        val prefs = prefsRepo.getCurrentPreferences()
+        withContext(Dispatchers.Default) {
+            buildDashboardData(
+                holdingEntities = holdingEntities,
+                quoteEntities = quoteEntities,
+                fxEntities = fxEntities,
+                snapshots = snapshots,
+                prefs = prefs
+            )
+        }
+    }
+
+    suspend fun getWidgetSnapshotData(
+        forceRefreshHistory: Boolean = false
+    ): WidgetSourceData = withContext(Dispatchers.IO) {
+        val dashboard = getDashboardSnapshot()
+        val graphMode = when (dashboard.widgetDisplayMetric) {
+            WidgetDisplayMetric.ASSET_VALUE -> MovementGraphMode.ASSET_VALUE
+            WidgetDisplayMetric.TOTAL_RETURN -> MovementGraphMode.PROFIT_LOSS
+        }
+        val movement = if (dashboard.valuedHoldings.isEmpty()) {
+            null
+        } else {
+            runCatching {
+                withTimeoutOrNull(6_500L) {
+                    fetchPortfolioMovement(
+                        timeframe = dashboard.widgetChartTimeframe,
+                        graphMode = graphMode,
+                        respectBuyDates = true,
+                        displayCurrency = dashboard.displayCurrency,
+                        includeExtendedHours = dashboard.showExtendedHoursPrice,
+                        forceRefresh = forceRefreshHistory
+                    )
+                }
+            }.getOrNull()
+        }
+        WidgetSourceData(
+            dashboard = dashboard,
+            movement = movement
+        )
+    }
+
     private fun parseSparkline(csv: String): List<Double> {
         if (csv.isBlank()) return emptyList()
         return sparklineCache.getOrPut(csv) {
@@ -1700,6 +1766,31 @@ class PortfolioRepository(
 
     companion object {
         private const val HISTORY_CACHE_TTL_MS = 120_000L
+
+        @Volatile
+        private var INSTANCE: PortfolioRepository? = null
+
+        fun getInstance(context: Context): PortfolioRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: run {
+                    val appCtx = context.applicationContext
+                    val db = ValorisDatabase.getInstance(appCtx)
+                    val prefs = UserPreferencesRepository(appCtx)
+                    PortfolioRepository(
+                        holdingDao = db.holdingDao(),
+                        quoteDao = db.quoteDao(),
+                        fxRateDao = db.fxRateDao(),
+                        snapshotDao = db.snapshotDao(),
+                        transactionDao = db.transactionDao(),
+                        prefsRepo = prefs,
+                        marketApi = NetworkModule.marketApiService,
+                        openErApi = NetworkModule.openErFxService,
+                        frankfurterApi = NetworkModule.frankfurterFxService,
+                        database = db
+                    ).also { INSTANCE = it }
+                }
+            }
+        }
 
         fun pickBestDisplayName(
             longName: String?,

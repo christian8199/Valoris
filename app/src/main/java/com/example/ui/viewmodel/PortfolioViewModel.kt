@@ -7,10 +7,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.backup.BackupPreview
 import com.example.data.local.AppLockConfig
-import com.example.data.local.UserPreferencesRepository
-import com.example.data.local.ValorisDatabase
-import com.example.data.remote.NetworkModule
 import com.example.data.repository.PortfolioRepository
+import com.example.widget.ValorisWidgetUpdater
 import com.example.domain.model.AssetClass
 import com.example.domain.model.AssetPreset
 import com.example.domain.model.ChartTimeframe
@@ -27,6 +25,7 @@ import com.example.domain.model.SortOption
 import com.example.domain.model.SupportedCurrency
 import com.example.domain.model.ThemeMode
 import com.example.domain.model.ValuedHolding
+import com.example.domain.model.WidgetDisplayMetric
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -74,20 +73,7 @@ data class HoldingDetailState(
 
 class PortfolioViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val database = ValorisDatabase.getInstance(application)
-    private val prefsRepo = UserPreferencesRepository(application)
-    private val repository = PortfolioRepository(
-        holdingDao = database.holdingDao(),
-        quoteDao = database.quoteDao(),
-        fxRateDao = database.fxRateDao(),
-        snapshotDao = database.snapshotDao(),
-        transactionDao = database.transactionDao(),
-        prefsRepo = prefsRepo,
-        marketApi = NetworkModule.marketApiService,
-        openErApi = NetworkModule.openErFxService,
-        frankfurterApi = NetworkModule.frankfurterFxService,
-        database = database
-    )
+    private val repository = PortfolioRepository.getInstance(application)
 
     private val _selectedFilter = MutableStateFlow<AssetClass?>(null)
     private val _sortOption = MutableStateFlow(SortOption.VALUE_DESC)
@@ -408,6 +394,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
             }
             try {
                 val result = repository.refreshAllMarketData()
+                syncWidgets()
                 if (!silent) {
                     val msg = result.errorMessage ?: "Live rates & quotes updated"
                     _snackbarEvents.emit(msg)
@@ -441,18 +428,21 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
     fun setDisplayCurrency(currency: SupportedCurrency) {
         viewModelScope.launch {
             repository.setDisplayCurrency(currency)
+            syncWidgets()
         }
     }
 
     fun toggleBalanceHidden() {
         viewModelScope.launch {
             repository.toggleBalanceHidden()
+            syncWidgets(bumpDataRevision = false)
         }
     }
 
     fun setBalanceHidden(hidden: Boolean) {
         viewModelScope.launch {
             repository.setBalanceHidden(hidden)
+            syncWidgets(bumpDataRevision = false)
         }
     }
 
@@ -471,6 +461,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
     fun setUseCompactNumbers(compact: Boolean) {
         viewModelScope.launch {
             repository.setUseCompactNumbers(compact)
+            syncWidgets(bumpDataRevision = false)
         }
     }
 
@@ -483,6 +474,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
     fun setShowExtendedHoursPrice(show: Boolean) {
         viewModelScope.launch {
             repository.setShowExtendedHoursPrice(show)
+            syncWidgets()
         }
     }
 
@@ -491,6 +483,41 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             repository.setDefaultChartTimeframe(timeframe)
         }
+    }
+
+    fun setWidgetDisplayMetric(metric: WidgetDisplayMetric) {
+        viewModelScope.launch {
+            repository.setWidgetDisplayMetric(metric)
+            syncWidgets()
+            ValorisWidgetUpdater.refreshGeneratedPreviewIfNeeded(getApplication())
+        }
+    }
+
+    fun setWidgetChartTimeframe(timeframe: ChartTimeframe) {
+        viewModelScope.launch {
+            repository.setWidgetChartTimeframe(timeframe)
+            syncWidgets()
+            ValorisWidgetUpdater.refreshGeneratedPreviewIfNeeded(getApplication())
+        }
+    }
+
+    fun requestPinPortfolioWidget() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val prompted = ValorisWidgetUpdater.requestPinWidget(app)
+            if (prompted) {
+                _snackbarEvents.emit("Launcher prompt sent — place Valoris Portfolio on your Home Screen")
+            } else {
+                _snackbarEvents.emit("Long-press your Home Screen → Widgets → Valoris Portfolio")
+            }
+        }
+    }
+
+    private suspend fun syncWidgets(bumpDataRevision: Boolean = true) {
+        ValorisWidgetUpdater.updateAllWidgets(
+            context = getApplication(),
+            bumpDataRevision = bumpDataRevision
+        )
     }
 
     fun unlockWithBiometric() {
@@ -686,6 +713,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
                 _pendingRestorePreview.value = null
                 _detailState.value = null
                 hasUserOverriddenMovementTimeframe = false
+                syncWidgets()
                 _snackbarEvents.emit(
                     "Restored ${result.holdingsCount} assets & ${result.transactionsCount} history entries"
                 )
@@ -715,6 +743,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 repository.saveHolding(holding)
+                syncWidgets()
                 _snackbarEvents.emit("Saved ${holding.symbol.uppercase()}")
             } catch (e: CancellationException) {
                 throw e
@@ -739,6 +768,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
                     buyPricePerUnit = buyPricePerUnit,
                     buyDateMillis = buyDateMillis
                 )
+                syncWidgets()
                 _snackbarEvents.emit("Added new buy to $symbol")
             } catch (e: CancellationException) {
                 throw e
@@ -769,6 +799,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
                     detailChartJob?.cancel()
                     _detailState.value = null
                 }
+                syncWidgets()
 
                 val qtyText = com.example.util.CurrencyFormatter.formatQuantity(result.soldQuantity, result.unitType)
                 val realizedSuffix = result.realizedGainNative?.let { gain ->
@@ -802,6 +833,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 repository.deleteTransaction(transactionId)
+                syncWidgets()
                 _snackbarEvents.emit("Deleted $symbol transaction and updated holding")
             } catch (e: CancellationException) {
                 throw e
@@ -825,6 +857,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
                         accountLabel = if (preset.assetClass == AssetClass.CASH) "Primary Account" else "Portfolio"
                     )
                 )
+                syncWidgets()
                 _snackbarEvents.emit("Added ${preset.name}")
             } catch (e: CancellationException) {
                 throw e
@@ -842,6 +875,7 @@ class PortfolioViewModel(application: Application) : AndroidViewModel(applicatio
                     detailChartJob?.cancel()
                     _detailState.value = null
                 }
+                syncWidgets()
                 _snackbarEvents.emit("Removed $label")
             } catch (e: CancellationException) {
                 throw e

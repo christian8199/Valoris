@@ -96,6 +96,16 @@ enum class ChartTimeframe(val label: String, val range: String, val interval: St
     }
 }
 
+enum class WidgetDisplayMetric(val label: String, val widgetTitle: String) {
+    ASSET_VALUE("Total Asset Value", "TOTAL ASSET VALUE"),
+    TOTAL_RETURN("Total Return", "TOTAL RETURN");
+
+    companion object {
+        fun fromName(name: String?): WidgetDisplayMetric =
+            entries.firstOrNull { it.name == name } ?: ASSET_VALUE
+    }
+}
+
 @Immutable
 data class Holding(
     val id: Long = 0L,
@@ -178,6 +188,8 @@ data class PortfolioDashboardData(
     val showPnlOnCards: Boolean,
     val showExtendedHoursPrice: Boolean = false,
     val defaultChartTimeframe: ChartTimeframe = ChartTimeframe.MONTH,
+    val widgetDisplayMetric: WidgetDisplayMetric = WidgetDisplayMetric.ASSET_VALUE,
+    val widgetChartTimeframe: ChartTimeframe = ChartTimeframe.MONTH,
     val appLockEnabled: Boolean = false,
     val biometricUnlockEnabled: Boolean = true,
     val totalValueDisplay: Double,

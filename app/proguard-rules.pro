@@ -29,6 +29,11 @@
     <init>(...);
 }
 
+# Glance ActionCallback is instantiated reflectively via zero-argument constructor
+-keep class * implements androidx.glance.appwidget.action.ActionCallback {
+    public <init>();
+}
+
 # OkHttp optional dependencies
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**

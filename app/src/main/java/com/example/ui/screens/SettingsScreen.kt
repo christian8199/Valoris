@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,7 +47,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,14 +58,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.backup.BackupPreview
 import com.example.domain.model.ChartTimeframe
 import com.example.domain.model.PortfolioDashboardData
 import com.example.domain.model.RefreshInterval
 import com.example.domain.model.SupportedCurrency
 import com.example.domain.model.ThemeMode
+import com.example.domain.model.WidgetDisplayMetric
 import com.example.ui.theme.NumericTextStyles
 import com.example.util.CurrencyFormatter
+import com.example.widget.ValorisWidgetUpdater
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -91,14 +99,32 @@ fun SettingsScreen(
     onConfirmRestoreBackup: () -> Unit,
     onDismissRestorePreview: () -> Unit,
     onSystemPickerStateChanged: (Boolean) -> Unit,
+    onSelectWidgetDisplayMetric: (WidgetDisplayMetric) -> Unit,
+    onSelectWidgetChartTimeframe: (ChartTimeframe) -> Unit,
+    onRequestPinWidget: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val biometricAvailable = remember(context) { isBiometricAvailable(context) }
+    val pinWidgetSupported = remember(context) { ValorisWidgetUpdater.isPinWidgetSupported(context) }
+    var placedWidgetCount by remember(context) {
+        mutableIntStateOf(ValorisWidgetUpdater.getPlacedWidgetCount(context))
+    }
     var activePinDialog by remember { mutableStateOf<PinDialogMode?>(null) }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                placedWidgetCount = ValorisWidgetUpdater.getPlacedWidgetCount(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -598,6 +624,161 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Restore")
                         }
+                    }
+                }
+            }
+        }
+
+        // Home Screen Widget
+        item(key = "settings_home_widget", contentType = "settings_card") {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 760.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Widgets,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Home Screen Widget",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = if (placedWidgetCount > 0) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        ) {
+                            Text(
+                                text = when (placedWidgetCount) {
+                                    0 -> "Not added"
+                                    1 -> "1 active"
+                                    else -> "$placedWidgetCount active"
+                                },
+                                style = NumericTextStyles.badge,
+                                color = if (placedWidgetCount > 0) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Minimalist full-bleed graph card showing either Total Asset Value or Total Return for your chosen range. Tap the eye icon on the widget to mask balances.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Displayed Metric",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            WidgetDisplayMetric.entries.forEach { metric ->
+                                val selected = dashboard.widgetDisplayMetric == metric
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectWidgetDisplayMetric(metric) },
+                                    label = { Text(metric.label) },
+                                    leadingIcon = if (selected) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    } else null,
+                                    modifier = Modifier.testTag("settings_widget_metric_${metric.name.lowercase()}")
+                                )
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Widget Graph Range",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ChartTimeframe.entries.forEach { timeframe ->
+                                val selected = dashboard.widgetChartTimeframe == timeframe
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectWidgetChartTimeframe(timeframe) },
+                                    label = { Text(timeframe.label) },
+                                    leadingIcon = if (selected) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    } else null,
+                                    modifier = Modifier.testTag("settings_widget_range_${timeframe.label.lowercase()}")
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = onRequestPinWidget,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("add_home_widget_button"),
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Widgets,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            if (pinWidgetSupported) {
+                                "Add Widget to Home Screen"
+                            } else {
+                                "How to Add Home Widget"
+                            }
+                        )
                     }
                 }
             }

@@ -802,4 +802,124 @@ class PortfolioMathTest {
         assertEquals("0.00002", CurrencyFormatter.formatPlainInputNumber(0.00002))
         assertEquals("85.25", CurrencyFormatter.formatPlainInputNumber(85.2500))
     }
+
+    @Test
+    fun widget_snapshot_supports_asset_value_total_return_range_and_privacy() {
+        val now = 1_700_000_000_000L
+        val holding = com.example.domain.model.ValuedHolding(
+            holding = com.example.domain.model.Holding(
+                id = 1L,
+                symbol = "VOO",
+                name = "Vanguard S&P 500 ETF",
+                assetClass = com.example.domain.model.AssetClass.ETF,
+                quantity = 40.0,
+                unitType = UnitType.SHARES,
+                nativeCurrency = "USD",
+                updatedAt = now
+            ),
+            unitQuoteNative = 400.0,
+            previousCloseNative = 395.0,
+            dayChangePercent = 1.27,
+            totalValueNative = 16_000.0,
+            totalValueDisplay = 16_000.0,
+            totalValueUsd = 16_000.0,
+            dayChangeDisplay = 200.0,
+            unrealizedGainDisplay = 1_800.0,
+            unrealizedGainPercent = 12.68,
+            portfolioWeightPercent = 100.0,
+            fxRateToDisplay = 1.0,
+            quoteStatus = com.example.domain.model.QuoteStatus.LIVE,
+            quoteUpdatedAt = now,
+            sparklinePoints = emptyList()
+        )
+        val baseDashboard = com.example.domain.model.PortfolioDashboardData(
+            displayCurrency = com.example.domain.model.SupportedCurrency.USD,
+            isBalanceHidden = false,
+            refreshInterval = com.example.domain.model.RefreshInterval.FIVE_MINUTES,
+            themeMode = com.example.domain.model.ThemeMode.SYSTEM,
+            useCompactNumbers = true,
+            showPnlOnCards = true,
+            widgetDisplayMetric = com.example.domain.model.WidgetDisplayMetric.ASSET_VALUE,
+            widgetChartTimeframe = com.example.domain.model.ChartTimeframe.YEAR,
+            totalValueDisplay = 16_000.0,
+            dayChangeDisplay = 200.0,
+            dayChangePercent = 1.27,
+            totalUnrealizedGainDisplay = 1_800.0,
+            totalUnrealizedGainPercent = 12.68,
+            valuedHoldings = listOf(holding),
+            allocationSlices = emptyList(),
+            fxRatesList = emptyList(),
+            usdToDisplayRate = 1.0,
+            trendValuesDisplay = listOf(14_000.0, 15_200.0, 16_000.0),
+            lastSyncEpoch = now - 120_000L,
+            fxSourceLabel = "Open ExchangeRate-API",
+            hasStaleQuotes = false
+        )
+        val movement = com.example.domain.model.PortfolioMovementData(
+            timeframe = com.example.domain.model.ChartTimeframe.YEAR,
+            totalTimeline = listOf(
+                com.example.domain.model.HistoricalPoint(1000L, 12_000.0),
+                com.example.domain.model.HistoricalPoint(2000L, 14_500.0),
+                com.example.domain.model.HistoricalPoint(3000L, 16_000.0)
+            ),
+            pnlTimeline = listOf(
+                com.example.domain.model.PnlTimelinePoint(1000L, -200.0, -200.0, 0.0),
+                com.example.domain.model.PnlTimelinePoint(2000L, 900.0, 900.0, 0.0),
+                com.example.domain.model.PnlTimelinePoint(3000L, 2_150.0, 1_800.0, 350.0)
+            ),
+            periodChangeDisplay = 4_000.0,
+            periodChangePercent = 33.33,
+            latestTotalReturnDisplay = 2_150.0,
+            latestReturnPercent = 15.52,
+            isLoading = false
+        )
+
+        // 1. ASSET_VALUE mode with 1Y timeline
+        val assetValueSnap = com.example.widget.buildWidgetSnapshot(
+            dashboard = baseDashboard,
+            movement = movement,
+            nowMillis = now
+        )
+        assertEquals(false, assetValueSnap.isEmpty)
+        assertEquals("TOTAL ASSET VALUE", assetValueSnap.eyebrowLabel)
+        assertEquals("1Y", assetValueSnap.rangeLabel)
+        assertEquals("$16.0K", assetValueSnap.formattedPrimaryValue)
+        assertEquals("+$4,000.00 (+33.33%) · 1Y", assetValueSnap.formattedSecondaryDelta)
+        assertEquals(listOf(12_000.0, 14_500.0, 16_000.0), assetValueSnap.chartPoints)
+        assertTrue(assetValueSnap.isPositive)
+
+        // 2. TOTAL_RETURN mode with negative & positive PnL chart
+        val totalReturnSnap = com.example.widget.buildWidgetSnapshot(
+            dashboard = baseDashboard.copy(
+                widgetDisplayMetric = com.example.domain.model.WidgetDisplayMetric.TOTAL_RETURN,
+                widgetChartTimeframe = com.example.domain.model.ChartTimeframe.MONTH
+            ),
+            movement = movement.copy(timeframe = com.example.domain.model.ChartTimeframe.MONTH),
+            nowMillis = now
+        )
+        assertEquals("TOTAL RETURN", totalReturnSnap.eyebrowLabel)
+        assertEquals("1M", totalReturnSnap.rangeLabel)
+        assertEquals("+$2,150.00", totalReturnSnap.formattedPrimaryValue)
+        assertEquals("+15.52% overall · 1M", totalReturnSnap.formattedSecondaryDelta)
+        assertEquals(listOf(-200.0, 900.0, 2_150.0), totalReturnSnap.chartPoints)
+        assertTrue(totalReturnSnap.isPositive)
+
+        // 3. Privacy Mode masks figures while preserving range badge
+        val hiddenSnap = com.example.widget.buildWidgetSnapshot(
+            dashboard = baseDashboard.copy(isBalanceHidden = true),
+            movement = movement,
+            nowMillis = now
+        )
+        assertTrue(hiddenSnap.isBalanceHidden)
+        assertEquals("••••••", hiddenSnap.formattedPrimaryValue)
+        assertTrue(hiddenSnap.formattedSecondaryDelta.startsWith("Hidden"))
+
+        // 4. Empty state
+        val emptySnap = com.example.widget.buildWidgetSnapshot(
+            dashboard = baseDashboard.copy(valuedHoldings = emptyList(), totalValueDisplay = 0.0),
+            movement = null,
+            nowMillis = now
+        )
+        assertTrue(emptySnap.isEmpty)
+    }
 }
